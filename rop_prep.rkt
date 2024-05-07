@@ -31,9 +31,60 @@
 (define EOS 'EOS) ; the "end of sequence" token
 (define TOKENS '(< > EOS))
 
+; Function to tally transitions from one token to another
+(define (tally-transitions data)
+  (let ([table (make-hash)])
+    (for ([seq data])
+      (for ([i (in-range 1 (length seq))])
+        (let* ([prev (list-ref seq (sub1 i))]
+               [next (list-ref seq i)])
+          (hash-update! table (cons prev next) add1 0))))
+    table))
+
+; Function to calculate transitional probabilities based on transition counts
+(define (transitional-probabilities data)
+  (let* ([counts (tally-transitions data)]
+         [totals (make-hash)])
+    (hash-for-each
+     counts
+     (lambda (pair count)
+       (hash-update! totals (car pair) add1 count)))
+    (hash-map
+     counts
+     (lambda (pair count)
+       (let ([total (hash-ref totals (car pair))])
+         (cons pair (/ count total)))))))
+
+(define transition-probs (transitional-probabilities DATA))
+
+; Function to generate sequences based on the given transitional probabilities (list of pairs)
+(define (generate-sequence prob-pairs)
+  (letrec ([gen-next-token (lambda (current-token)
+                             (let* ([filtered-pairs (filter (lambda (pair) (eq? (car (car pair)) current-token))
+                                                            prob-pairs)]
+                                    [total (apply + (map cdr filtered-pairs))]
+                                    [rand-value (* (random) total)]
+                                    [sum 0]
+                                    [result 'EOS])
+                               (for ([pair (in-list filtered-pairs)]
+                                     #:break (>= sum rand-value))
+                                 (set! sum (+ sum (cdr pair)))
+                                 (set! result (cdr (car pair))))
+                               result))]
+           [generate (lambda (sequence)
+                       (let ([next-token (gen-next-token (last sequence))])
+                         (if (eq? next-token 'EOS)
+                             sequence
+                             (generate (append sequence (list next-token))))))])
+    (generate (list (list-ref TOKENS (random (length TOKENS)))))))
+
+(define generated-sequences (for/list ([i (in-range 10)])
+                                     (generate-sequence transition-probs)))
+(for-each pretty-print generated-sequences)
+
+
 ; The functions gen-token-* generate the next token in the sequence,
 ; given the previous tokens seq.
-
 (define (gen-token-random seq)
   ; Return a random token from our list TOKENS without considering
   ; the tokens in seq at all. Each token has equal probability of
@@ -64,7 +115,7 @@
         seq^
         ((generate genfn) seq^))))
 
-
+#|
 ; generate and print 20 sequences, where each token comes from the uniform
 ; random distribution
 (pretty-write (map (generate gen-token-random)
@@ -74,4 +125,4 @@
 ; distribution P(<) = P(>) = 0.4 and P(EOS) = 0.2
 (pretty-write (map (generate (gen-token-stateless '#(0.4 0.8 1)))
                    (make-list 20 '())))
-
+|#
